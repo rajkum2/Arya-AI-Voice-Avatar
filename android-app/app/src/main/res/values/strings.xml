@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Arya AI</string>
+    <string name="conversation_notification_title">In conversation</string>
+    <string name="conversation_notification_text">Tap to return to your avatar call</string>
+</resources>

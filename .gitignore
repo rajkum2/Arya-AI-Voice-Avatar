@@ -1,0 +1,30 @@
+# Python
+BE/.venv/
+BE/**/__pycache__/
+BE/**/*.pyc
+BE/*.db
+BE/arya.db
+BE/.pytest_cache/
+BE/*.egg-info/
+BE/dist/
+BE/build/
+
+# Node
+FE/node_modules/
+FE/.next/
+FE/out/
+FE/.env.local
+
+# Android
+android-app/.gradle/
+android-app/**/build/
+android-app/local.properties
+android-app/.idea/
+*.iml
+
+# Env / OS
+.env
+.DS_Store
+.idea/
+.vscode/
+*.log
