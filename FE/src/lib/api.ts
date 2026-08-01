@@ -133,6 +133,10 @@ export const api = {
     });
   },
 
+  getSession(id: string) {
+    return request<Session>(`/api/v1/sessions/${id}`);
+  },
+
   endSession(id: string) {
     return request<Session>(`/api/v1/sessions/${id}`, {
       method: "DELETE",

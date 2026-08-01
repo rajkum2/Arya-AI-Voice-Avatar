@@ -37,24 +37,12 @@ export default function ConversationPage() {
       return;
     }
     const raw = sessionStorage.getItem(`session:${id}`);
-    let s: Session | null = raw ? JSON.parse(raw) : null;
+    let s: Session | null = raw ? (JSON.parse(raw) as Session) : null;
     const boot = async () => {
-      if (!s) {
-        try {
-          s = await api.getSession?.(id as never);
-        } catch {
-          /* use partial */
-        }
-      }
-      // fetch session from API
       try {
-        const token = localStorage.getItem("access_token");
-        const res = await fetch(`${api.url}/api/v1/sessions/${id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) s = await res.json();
+        s = await api.getSession(id);
       } catch {
-        /* keep cached */
+        /* keep sessionStorage cache if API fails */
       }
       if (!s) {
         setError("Session not found");
@@ -93,7 +81,7 @@ export default function ConversationPage() {
       };
       ws.onerror = () => setError("WebSocket error");
     };
-    boot();
+    void boot();
 
     const timer = setInterval(() => setElapsed((e) => e + 1), 1000);
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
