@@ -126,8 +126,18 @@ export default function ConversationPage() {
           });
 
           await room.connect(s.room_url, s.room_token);
-          await room.localParticipant.setMicrophoneEnabled(true);
-          setLivekitStatus("Live · mic on");
+          try {
+            // Ensure browser permission + publish mic into LiveKit (FULL mode ASR)
+            await navigator.mediaDevices.getUserMedia({ audio: true });
+            await room.localParticipant.setMicrophoneEnabled(true);
+            setLivekitStatus("Live · mic on — speak now");
+            setState("listening");
+          } catch (micErr) {
+            const msg =
+              micErr instanceof Error ? micErr.message : "Microphone permission denied";
+            setError(`Mic required for conversation: ${msg}`);
+            setLivekitStatus("Connected · mic blocked");
+          }
 
           // Attach already-subscribed video tracks
           room.remoteParticipants.forEach((p) => {

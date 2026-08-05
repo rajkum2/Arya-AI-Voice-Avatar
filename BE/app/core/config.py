@@ -83,6 +83,9 @@ class Settings(BaseSettings):
     liveavatar_api_key: str = ""
     # When true, use LiveAvatar sandbox (free, Wayne avatar, ~60s sessions)
     liveavatar_sandbox: bool = True
+    # REQUIRED for FULL-mode conversation (without context = restricted / no replies)
+    liveavatar_context_id: str = ""
+    liveavatar_voice_id: str = ""
     anam_api_key: str = ""
     tavus_api_key: str = ""
     deepgram_api_key: str = ""

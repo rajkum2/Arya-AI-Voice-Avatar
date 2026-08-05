@@ -73,9 +73,23 @@ class LiveAvatarProvider(AvatarProvider):
                     f"LiveAvatar requires a UUID avatar_id, got: {avatar_provider_id!r}"
                 )
 
+        settings = get_settings()
         persona: dict[str, Any] = {"language": "en"}
-        if voice_id and len(voice_id) >= 32:
-            persona["voice_id"] = voice_id
+
+        # Prefer env voice, then avatar DB voice if UUID-shaped
+        resolved_voice = (settings.liveavatar_voice_id or voice_id or "").strip()
+        if resolved_voice and len(resolved_voice) >= 32:
+            persona["voice_id"] = resolved_voice
+
+        # REQUIRED for conversation — without context LiveAvatar stays in restricted mode
+        resolved_context = (settings.liveavatar_context_id or "").strip()
+        if resolved_context:
+            persona["context_id"] = resolved_context
+        else:
+            logger.warning(
+                "LIVEAVATAR_CONTEXT_ID is empty — avatar will not respond to speech "
+                "(restricted mode)"
+            )
 
         token_body: dict[str, Any] = {
             "mode": "FULL",
@@ -85,10 +99,17 @@ class LiveAvatarProvider(AvatarProvider):
             "interactivity_type": "CONVERSATIONAL",
             "video_settings": {"quality": "medium", "encoding": "H264"},
             "max_session_duration": min(
-                get_settings().max_session_duration_sec,
-                60 if self.sandbox else get_settings().max_session_duration_sec,
+                settings.max_session_duration_sec,
+                60 if self.sandbox else settings.max_session_duration_sec,
             ),
         }
+        logger.info(
+            "LiveAvatar token persona context=%s voice=%s sandbox=%s avatar=%s",
+            persona.get("context_id"),
+            persona.get("voice_id"),
+            self.sandbox,
+            avatar_id,
+        )
 
         async with httpx.AsyncClient(timeout=45.0) as client:
             token_resp = await client.post(
