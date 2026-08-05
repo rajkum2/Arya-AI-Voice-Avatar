@@ -247,47 +247,25 @@ export default function ConversationPage() {
     wsRef.current?.send(JSON.stringify({ type: "interrupt" }));
   }
 
-  async function toggleFullscreen() {
-    const el = stageRef.current;
-    if (!el) return;
-    try {
-      const doc = document as Document & {
-        webkitFullscreenElement?: Element | null;
-        webkitExitFullscreen?: () => Promise<void>;
-      };
-      const active = document.fullscreenElement || doc.webkitFullscreenElement;
-      if (!active) {
-        const req =
-          el.requestFullscreen?.bind(el) ||
-          (el as HTMLElement & { webkitRequestFullscreen?: () => void })
-            .webkitRequestFullscreen?.bind(el);
-        if (req) await Promise.resolve(req());
-      } else {
-        const exit =
-          document.exitFullscreen?.bind(document) ||
-          doc.webkitExitFullscreen?.bind(document);
-        if (exit) await Promise.resolve(exit());
-      }
-    } catch (e) {
-      setError(
-        e instanceof Error ? `Fullscreen failed: ${e.message}` : "Fullscreen failed"
-      );
-    }
+  function toggleFullscreen() {
+    // CSS full-viewport mode (reliable across browsers; browser Fullscreen API often blocked)
+    setIsFullscreen((v) => !v);
   }
 
   useEffect(() => {
-    const onFsChange = () => {
-      const doc = document as Document & { webkitFullscreenElement?: Element | null };
-      const active = document.fullscreenElement || doc.webkitFullscreenElement;
-      setIsFullscreen(!!active && active === stageRef.current);
+    if (!isFullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsFullscreen(false);
     };
-    document.addEventListener("fullscreenchange", onFsChange);
-    document.addEventListener("webkitfullscreenchange", onFsChange as EventListener);
+    // Prevent body scroll while expanded
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
     return () => {
-      document.removeEventListener("fullscreenchange", onFsChange);
-      document.removeEventListener("webkitfullscreenchange", onFsChange as EventListener);
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
     };
-  }, []);
+  }, [isFullscreen]);
 
   const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
   const ss = String(elapsed % 60).padStart(2, "0");
@@ -333,24 +311,55 @@ export default function ConversationPage() {
             {isLive ? (
               <div
                 ref={stageRef}
-                style={{
-                  width: "100%",
-                  maxWidth: isFullscreen ? "none" : 560,
-                  position: "relative",
-                  background: "#000",
-                  borderRadius: isFullscreen ? 0 : 16,
-                  ...(isFullscreen
+                style={
+                  isFullscreen
                     ? {
+                        position: "fixed",
+                        inset: 0,
+                        zIndex: 9999,
                         width: "100vw",
                         height: "100vh",
                         maxWidth: "none",
+                        background: "#000",
                         display: "flex",
                         flexDirection: "column",
                         justifyContent: "center",
+                        borderRadius: 0,
                       }
-                    : {}),
-                }}
+                    : {
+                        width: "100%",
+                        maxWidth: 560,
+                        position: "relative",
+                        background: "#000",
+                        borderRadius: 16,
+                      }
+                }
               >
+                {/* Always-visible full screen control on the video */}
+                <button
+                  type="button"
+                  onClick={toggleFullscreen}
+                  title={isFullscreen ? "Exit full screen (Esc)" : "Full screen avatar"}
+                  aria-label={isFullscreen ? "Exit full screen" : "Enter full screen"}
+                  style={{
+                    position: "absolute",
+                    top: 12,
+                    right: 12,
+                    zIndex: 2,
+                    border: "none",
+                    borderRadius: 10,
+                    padding: "8px 12px",
+                    background: "rgba(0,0,0,0.65)",
+                    color: "#fff",
+                    fontWeight: 600,
+                    fontSize: 13,
+                    cursor: "pointer",
+                    backdropFilter: "blur(6px)",
+                  }}
+                >
+                  {isFullscreen ? "✕ Exit full screen" : "⛶ Full screen"}
+                </button>
+
                 <video
                   ref={videoRef}
                   autoPlay
@@ -363,12 +372,13 @@ export default function ConversationPage() {
                     background: "#000",
                     aspectRatio: isFullscreen ? undefined : "16/9",
                     objectFit: "cover",
+                    flex: isFullscreen ? 1 : undefined,
                   }}
                 />
                 {/* Avatar TTS / voice — must be attached separately from video */}
                 <audio ref={audioRef} autoPlay playsInline />
 
-                {/* Overlay controls in fullscreen */}
+                {/* Overlay controls */}
                 <div
                   style={{
                     position: isFullscreen ? "absolute" : "relative",
@@ -377,7 +387,7 @@ export default function ConversationPage() {
                     bottom: isFullscreen ? 0 : undefined,
                     padding: isFullscreen ? "1rem 1.25rem 1.5rem" : "0.5rem 0 0",
                     background: isFullscreen
-                      ? "linear-gradient(transparent, rgba(0,0,0,0.75))"
+                      ? "linear-gradient(transparent, rgba(0,0,0,0.8))"
                       : "transparent",
                     display: "flex",
                     flexDirection: "column",
@@ -385,7 +395,7 @@ export default function ConversationPage() {
                     gap: 8,
                   }}
                 >
-                  <p className="muted" style={{ textAlign: "center", margin: 0 }}>
+                  <p className="muted" style={{ textAlign: "center", margin: 0, color: "#cbd5e1" }}>
                     {livekitStatus || "Starting LiveAvatar…"}
                   </p>
                   <div
@@ -410,7 +420,7 @@ export default function ConversationPage() {
                       <button
                         type="button"
                         className="btn btn-secondary"
-                        onClick={() => void toggleFullscreen()}
+                        onClick={toggleFullscreen}
                       >
                         Exit full screen
                       </button>
@@ -502,11 +512,11 @@ export default function ConversationPage() {
               {isLive && (
                 <button
                   type="button"
-                  className="btn btn-secondary"
-                  onClick={() => void toggleFullscreen()}
-                  title="Make avatar full screen"
+                  className="btn btn-primary"
+                  onClick={toggleFullscreen}
+                  title="Expand avatar to fill the screen"
                 >
-                  Full screen
+                  ⛶ Full screen
                 </button>
               )}
               {session?.barge_in_enabled && !isLive && (
