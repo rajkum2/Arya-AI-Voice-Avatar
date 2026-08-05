@@ -28,6 +28,12 @@ async def start_session(
 ) -> SessionOut:
     settings = get_settings()
     session, p_session, greeting = await create_session(db, user, body)
+    max_dur = settings.max_session_duration_sec
+    if p_session.metadata.get("max_session_duration"):
+        try:
+            max_dur = int(p_session.metadata["max_session_duration"])
+        except (TypeError, ValueError):
+            pass
     return SessionOut(
         id=session.id,
         avatar_id=session.avatar_id,
@@ -40,9 +46,12 @@ async def start_session(
         started_at=session.started_at,
         duration_sec=0,
         idle_timeout_sec=settings.session_idle_timeout_sec,
-        max_duration_sec=settings.max_session_duration_sec,
+        max_duration_sec=max_dur,
         mock_mode=p_session.mock_mode,
         greeting=greeting,
+        transport=str(p_session.metadata.get("transport") or ("mock" if p_session.mock_mode else "")),
+        sandbox=bool(p_session.metadata.get("sandbox")),
+        failover_reason=str(p_session.metadata.get("failover_reason") or ""),
     )
 
 

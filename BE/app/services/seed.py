@@ -66,6 +66,14 @@ async def seed_if_empty(db: AsyncSession) -> None:
         )
 
     avatars = (await db.execute(select(Avatar))).scalars().all()
+    # LiveAvatar sandbox Wayne UUID (production: replace with public/user avatar UUID)
+    liveavatar_default_id = "dd73ea75-1218-4ef3-92ce-606d5f7fbc0a"
+    use_liveavatar = bool(
+        settings.liveavatar_api_key
+        or settings.livekit_api_key
+        or settings.default_avatar_provider in ("liveavatar", "heygen")
+    )
+
     if not avatars:
         seeds = [
             (
@@ -96,8 +104,8 @@ async def seed_if_empty(db: AsyncSession) -> None:
                 description=desc,
                 category=cat,
                 thumbnail_url=f"https://api.dicebear.com/9.x/avataaars/svg?seed={name}",
-                provider="mock",
-                provider_avatar_id=name.lower(),
+                provider="liveavatar" if use_liveavatar else "mock",
+                provider_avatar_id=liveavatar_default_id if use_liveavatar else name.lower(),
                 voice_id="default",
                 is_active=True,
                 is_featured=i == 0,
@@ -115,5 +123,13 @@ async def seed_if_empty(db: AsyncSession) -> None:
                     is_published=True,
                 )
             )
+    elif use_liveavatar:
+        # Upgrade existing mock avatars to LiveAvatar sandbox IDs
+        for avatar in avatars:
+            if avatar.provider == "mock" or not avatar.provider_avatar_id or len(
+                str(avatar.provider_avatar_id)
+            ) < 32:
+                avatar.provider = "liveavatar"
+                avatar.provider_avatar_id = liveavatar_default_id
 
     await db.commit()

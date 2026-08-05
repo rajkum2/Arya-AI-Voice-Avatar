@@ -30,6 +30,10 @@ class SessionOut(BaseModel):
     # Mock mode helper: simulated turn channel instructions
     mock_mode: bool = False
     greeting: str = ""
+    # LiveKit / LiveAvatar extras
+    transport: str = ""
+    sandbox: bool = False
+    failover_reason: str = ""
 
     model_config = {"from_attributes": True}
 

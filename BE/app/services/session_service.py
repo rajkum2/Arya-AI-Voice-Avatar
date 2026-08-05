@@ -58,7 +58,15 @@ async def create_session(
     greeting = persona.greeting if persona else "Hello!"
     system_prompt = persona.system_prompt if persona else "You are a helpful AI."
 
-    provider = get_avatar_provider(avatar.provider)
+    # Prefer global default when avatar still marked mock but LiveAvatar/HeyGen is configured
+    provider_name = avatar.provider
+    if provider_name == "mock" and settings.default_avatar_provider not in (
+        "",
+        "mock",
+    ):
+        provider_name = settings.default_avatar_provider
+
+    provider = get_avatar_provider(provider_name)
     try:
         p_session = await provider.create_session(
             avatar_provider_id=avatar.provider_avatar_id or avatar.name,
@@ -69,7 +77,7 @@ async def create_session(
         )
     except Exception as exc:  # noqa: BLE001
         # Fail over to mock so local demos keep working
-        if avatar.provider != "mock":
+        if provider_name != "mock":
             provider = get_avatar_provider("mock")
             p_session = await provider.create_session(
                 avatar_provider_id=avatar.provider_avatar_id or avatar.name,

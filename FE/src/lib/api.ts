@@ -50,6 +50,9 @@ export type Session = {
   mock_mode: boolean;
   greeting: string;
   max_duration_sec: number;
+  transport?: string;
+  sandbox?: boolean;
+  failover_reason?: string;
 };
 
 function authHeaders(): HeadersInit {

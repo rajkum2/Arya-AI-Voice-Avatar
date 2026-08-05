@@ -80,6 +80,9 @@ class Settings(BaseSettings):
         return v
 
     heygen_api_key: str = ""
+    liveavatar_api_key: str = ""
+    # When true, use LiveAvatar sandbox (free, Wayne avatar, ~60s sessions)
+    liveavatar_sandbox: bool = True
     anam_api_key: str = ""
     tavus_api_key: str = ""
     deepgram_api_key: str = ""
@@ -91,6 +94,7 @@ class Settings(BaseSettings):
     livekit_api_key: str = ""
     livekit_api_secret: str = ""
     fernet_key: str = ""
+
 
     captions_default: bool = True
     barge_in_enabled: bool = True

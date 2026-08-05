@@ -2,6 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import {
+  Room,
+  RoomEvent,
+  Track,
+  type RemoteTrack,
+  type RemoteTrackPublication,
+  type RemoteParticipant,
+} from "livekit-client";
 import { Nav } from "@/components/Nav";
 import { api, isLoggedIn, Session } from "@/lib/api";
 
@@ -18,12 +26,19 @@ export default function ConversationPage() {
   const [captionsOn, setCaptionsOn] = useState(true);
   const [error, setError] = useState("");
   const [elapsed, setElapsed] = useState(0);
+  const [livekitStatus, setLivekitStatus] = useState("");
   const wsRef = useRef<WebSocket | null>(null);
+  const roomRef = useRef<Room | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const endCall = useCallback(async () => {
     try {
       wsRef.current?.send(JSON.stringify({ type: "end" }));
       wsRef.current?.close();
+      if (roomRef.current) {
+        await roomRef.current.disconnect();
+        roomRef.current = null;
+      }
       await api.endSession(id);
     } catch {
       /* ignore */
@@ -38,12 +53,36 @@ export default function ConversationPage() {
     }
     const raw = sessionStorage.getItem(`session:${id}`);
     let s: Session | null = raw ? (JSON.parse(raw) as Session) : null;
+    let cancelled = false;
+
     const boot = async () => {
       try {
         s = await api.getSession(id);
       } catch {
         /* keep sessionStorage cache if API fails */
       }
+      // Prefer richer session from startSession storage when getSession omits tokens
+      if (raw) {
+        try {
+          const cached = JSON.parse(raw) as Session;
+          if (s) {
+            s = {
+              ...s,
+              room_url: s.room_url || cached.room_url,
+              room_token: s.room_token || cached.room_token,
+              mock_mode: s.mock_mode ?? cached.mock_mode,
+              transport: s.transport || cached.transport,
+              sandbox: s.sandbox ?? cached.sandbox,
+              failover_reason: s.failover_reason || cached.failover_reason,
+            };
+          } else {
+            s = cached;
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      if (cancelled) return;
       if (!s) {
         setError("Session not found");
         return;
@@ -51,6 +90,64 @@ export default function ConversationPage() {
       setSession(s);
       setCaptionsOn(s.captions_enabled);
 
+      // LiveKit video when LiveAvatar returned a real room
+      const isLiveKit =
+        !s.mock_mode &&
+        !!s.room_url &&
+        !!s.room_token &&
+        (s.room_url.startsWith("wss://") || s.room_url.startsWith("ws://"));
+
+      if (isLiveKit) {
+        try {
+          setLivekitStatus("Connecting to avatar…");
+          const room = new Room({ adaptiveStream: true, dynacast: true });
+          roomRef.current = room;
+
+          const attachVideo = (
+            track: RemoteTrack,
+            publication: RemoteTrackPublication,
+            participant: RemoteParticipant
+          ) => {
+            if (track.kind !== Track.Kind.Video) return;
+            if (!videoRef.current) return;
+            track.attach(videoRef.current);
+            setLivekitStatus(`Connected · ${participant.identity || "avatar"}`);
+            setState("speaking");
+          };
+
+          room.on(
+            RoomEvent.TrackSubscribed,
+            (track, publication, participant) => {
+              attachVideo(track, publication, participant);
+            }
+          );
+          room.on(RoomEvent.Disconnected, () => {
+            setLivekitStatus("Disconnected");
+          });
+
+          await room.connect(s.room_url, s.room_token);
+          await room.localParticipant.setMicrophoneEnabled(true);
+          setLivekitStatus("Live · mic on");
+
+          // Attach already-subscribed video tracks
+          room.remoteParticipants.forEach((p) => {
+            p.trackPublications.forEach((pub) => {
+              if (pub.track && pub.kind === Track.Kind.Video) {
+                attachVideo(pub.track as RemoteTrack, pub, p);
+              }
+            });
+          });
+        } catch (e) {
+          setError(
+            e instanceof Error
+              ? `LiveKit connect failed: ${e.message}`
+              : "LiveKit connect failed"
+          );
+          setLivekitStatus("LiveKit error");
+        }
+      }
+
+      // Backend transcript WS still useful for mock + captions sidecar
       const token = localStorage.getItem("access_token");
       const ws = new WebSocket(`${api.wsUrl}/ws/session/${id}?token=${token}`);
       wsRef.current = ws;
@@ -79,7 +176,9 @@ export default function ConversationPage() {
         }
         if (msg.type === "error") setError(msg.message);
       };
-      ws.onerror = () => setError("WebSocket error");
+      ws.onerror = () => {
+        if (!isLiveKit) setError("WebSocket error");
+      };
     };
     void boot();
 
@@ -91,9 +190,12 @@ export default function ConversationPage() {
     window.addEventListener("beforeunload", onBeforeUnload);
 
     return () => {
+      cancelled = true;
       clearInterval(timer);
       window.removeEventListener("beforeunload", onBeforeUnload);
       wsRef.current?.close();
+      roomRef.current?.disconnect();
+      roomRef.current = null;
     };
   }, [id, router]);
 
@@ -110,6 +212,10 @@ export default function ConversationPage() {
 
   const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
   const ss = String(elapsed % 60).padStart(2, "0");
+  const isLive =
+    session &&
+    !session.mock_mode &&
+    session.room_url?.startsWith("wss://");
 
   return (
     <>
@@ -131,7 +237,8 @@ export default function ConversationPage() {
             <span className="badge">AI · not a human</span>
             <span className="muted">
               {mm}:{ss}
-              {session?.mock_mode ? " · mock" : ""}
+              {session?.sandbox ? " · sandbox" : ""}
+              {session?.mock_mode ? " · mock" : ` · ${session?.provider || ""}`}
             </span>
           </div>
 
@@ -140,35 +247,66 @@ export default function ConversationPage() {
               flex: 1,
               display: "grid",
               placeItems: "center",
-              padding: "2rem 1rem",
+              padding: "1rem",
+              minHeight: 280,
             }}
           >
-            <div style={{ textAlign: "center" }}>
-              <div
-                style={{
-                  width: 160,
-                  height: 160,
-                  borderRadius: "50%",
-                  margin: "0 auto 1rem",
-                  background:
-                    state === "speaking"
-                      ? "linear-gradient(135deg,#22d3ee,#7c5cff)"
-                      : state === "thinking"
-                        ? "linear-gradient(135deg,#fbbf24,#f97316)"
-                        : "linear-gradient(135deg,#34d399,#0ea5e9)",
-                  boxShadow: "0 0 60px rgba(124,92,255,0.35)",
-                  animation: state !== "listening" ? "pulse 1.2s ease infinite" : undefined,
-                }}
-              />
-              <div className={`state-${state}`} style={{ fontWeight: 700, textTransform: "capitalize" }}>
-                {state}
+            {isLive ? (
+              <div style={{ width: "100%", maxWidth: 560 }}>
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  style={{
+                    width: "100%",
+                    borderRadius: 16,
+                    background: "#000",
+                    aspectRatio: "16/9",
+                    objectFit: "cover",
+                  }}
+                />
+                <p className="muted" style={{ textAlign: "center", marginTop: 8 }}>
+                  {livekitStatus || "Starting LiveAvatar…"}
+                </p>
+                <div
+                  className={`state-${state}`}
+                  style={{ textAlign: "center", fontWeight: 700, textTransform: "capitalize" }}
+                >
+                  {state}
+                </div>
               </div>
-              <p className="muted" style={{ maxWidth: 360, margin: "0.5rem auto 0" }}>
-                {session?.mock_mode
-                  ? "Mock mode: type a message below. Wire HeyGen/LiveKit for real video."
-                  : "Live WebRTC avatar track will render here."}
-              </p>
-            </div>
+            ) : (
+              <div style={{ textAlign: "center" }}>
+                <div
+                  style={{
+                    width: 160,
+                    height: 160,
+                    borderRadius: "50%",
+                    margin: "0 auto 1rem",
+                    background:
+                      state === "speaking"
+                        ? "linear-gradient(135deg,#22d3ee,#7c5cff)"
+                        : state === "thinking"
+                          ? "linear-gradient(135deg,#fbbf24,#f97316)"
+                          : "linear-gradient(135deg,#34d399,#0ea5e9)",
+                    boxShadow: "0 0 60px rgba(124,92,255,0.35)",
+                  }}
+                />
+                <div
+                  className={`state-${state}`}
+                  style={{ fontWeight: 700, textTransform: "capitalize" }}
+                >
+                  {state}
+                </div>
+                <p className="muted" style={{ maxWidth: 360, margin: "0.5rem auto 0" }}>
+                  {session?.failover_reason
+                    ? `Fallback mock: ${session.failover_reason.slice(0, 120)}`
+                    : session?.mock_mode
+                      ? "Mock mode: type a message below. LiveAvatar video appears when provider session succeeds."
+                      : "Connecting…"}
+                </p>
+              </div>
+            )}
           </div>
 
           {captionsOn && (
@@ -183,7 +321,11 @@ export default function ConversationPage() {
               }}
             >
               {captions.length === 0 && (
-                <span className="muted">Captions will appear here…</span>
+                <span className="muted">
+                  {isLive
+                    ? "Speak naturally — LiveAvatar handles the conversation in FULL mode."
+                    : "Captions will appear here…"}
+                </span>
               )}
               {captions.map((c, i) => (
                 <div key={i} style={{ marginBottom: 4, opacity: c.is_final ? 1 : 0.7 }}>
@@ -196,13 +338,17 @@ export default function ConversationPage() {
             </div>
           )}
 
-          {error && <div className="error" style={{ marginBottom: "0.75rem" }}>{error}</div>}
+          {error && (
+            <div className="error" style={{ marginBottom: "0.75rem" }}>
+              {error}
+            </div>
+          )}
 
           <div className="row" style={{ justifyContent: "center" }}>
             <button className="btn btn-secondary" onClick={() => setCaptionsOn((v) => !v)}>
               {captionsOn ? "CC on" : "CC off"}
             </button>
-            {session?.barge_in_enabled && (
+            {session?.barge_in_enabled && !isLive && (
               <button className="btn btn-secondary" onClick={interrupt}>
                 Interrupt
               </button>
@@ -212,28 +358,23 @@ export default function ConversationPage() {
             </button>
           </div>
 
-          <div className="row" style={{ marginTop: "1rem" }}>
-            <input
-              className="input"
-              placeholder="Type what you would say (accessibility + mock STT)…"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && sendText()}
-              style={{ flex: 1 }}
-            />
-            <button className="btn btn-primary" onClick={sendText}>
-              Send
-            </button>
-          </div>
+          {!isLive && (
+            <div className="row" style={{ marginTop: "1rem" }}>
+              <input
+                className="input"
+                placeholder="Type what you would say (mock STT)…"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && sendText()}
+                style={{ flex: 1 }}
+              />
+              <button className="btn btn-primary" onClick={sendText}>
+                Send
+              </button>
+            </div>
+          )}
         </div>
       </main>
-      <style jsx global>{`
-        @keyframes pulse {
-          0% { transform: scale(1); }
-          50% { transform: scale(1.04); }
-          100% { transform: scale(1); }
-        }
-      `}</style>
     </>
   );
 }
