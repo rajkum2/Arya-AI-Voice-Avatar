@@ -27,10 +27,12 @@ export default function ConversationPage() {
   const [error, setError] = useState("");
   const [elapsed, setElapsed] = useState(0);
   const [livekitStatus, setLivekitStatus] = useState("");
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const roomRef = useRef<Room | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
 
   const endCall = useCallback(async () => {
     try {
@@ -245,6 +247,48 @@ export default function ConversationPage() {
     wsRef.current?.send(JSON.stringify({ type: "interrupt" }));
   }
 
+  async function toggleFullscreen() {
+    const el = stageRef.current;
+    if (!el) return;
+    try {
+      const doc = document as Document & {
+        webkitFullscreenElement?: Element | null;
+        webkitExitFullscreen?: () => Promise<void>;
+      };
+      const active = document.fullscreenElement || doc.webkitFullscreenElement;
+      if (!active) {
+        const req =
+          el.requestFullscreen?.bind(el) ||
+          (el as HTMLElement & { webkitRequestFullscreen?: () => void })
+            .webkitRequestFullscreen?.bind(el);
+        if (req) await Promise.resolve(req());
+      } else {
+        const exit =
+          document.exitFullscreen?.bind(document) ||
+          doc.webkitExitFullscreen?.bind(document);
+        if (exit) await Promise.resolve(exit());
+      }
+    } catch (e) {
+      setError(
+        e instanceof Error ? `Fullscreen failed: ${e.message}` : "Fullscreen failed"
+      );
+    }
+  }
+
+  useEffect(() => {
+    const onFsChange = () => {
+      const doc = document as Document & { webkitFullscreenElement?: Element | null };
+      const active = document.fullscreenElement || doc.webkitFullscreenElement;
+      setIsFullscreen(!!active && active === stageRef.current);
+    };
+    document.addEventListener("fullscreenchange", onFsChange);
+    document.addEventListener("webkitfullscreenchange", onFsChange as EventListener);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFsChange);
+      document.removeEventListener("webkitfullscreenchange", onFsChange as EventListener);
+    };
+  }, []);
+
   const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
   const ss = String(elapsed % 60).padStart(2, "0");
   const isLive =
@@ -287,7 +331,26 @@ export default function ConversationPage() {
             }}
           >
             {isLive ? (
-              <div style={{ width: "100%", maxWidth: 560 }}>
+              <div
+                ref={stageRef}
+                style={{
+                  width: "100%",
+                  maxWidth: isFullscreen ? "none" : 560,
+                  position: "relative",
+                  background: "#000",
+                  borderRadius: isFullscreen ? 0 : 16,
+                  ...(isFullscreen
+                    ? {
+                        width: "100vw",
+                        height: "100vh",
+                        maxWidth: "none",
+                        display: "flex",
+                        flexDirection: "column",
+                        justifyContent: "center",
+                      }
+                    : {}),
+                }}
+              >
                 <video
                   ref={videoRef}
                   autoPlay
@@ -295,22 +358,67 @@ export default function ConversationPage() {
                   muted
                   style={{
                     width: "100%",
-                    borderRadius: 16,
+                    height: isFullscreen ? "100%" : undefined,
+                    borderRadius: isFullscreen ? 0 : 16,
                     background: "#000",
-                    aspectRatio: "16/9",
+                    aspectRatio: isFullscreen ? undefined : "16/9",
                     objectFit: "cover",
                   }}
                 />
                 {/* Avatar TTS / voice — must be attached separately from video */}
                 <audio ref={audioRef} autoPlay playsInline />
-                <p className="muted" style={{ textAlign: "center", marginTop: 8 }}>
-                  {livekitStatus || "Starting LiveAvatar…"}
-                </p>
+
+                {/* Overlay controls in fullscreen */}
                 <div
-                  className={`state-${state}`}
-                  style={{ textAlign: "center", fontWeight: 700, textTransform: "capitalize" }}
+                  style={{
+                    position: isFullscreen ? "absolute" : "relative",
+                    left: 0,
+                    right: 0,
+                    bottom: isFullscreen ? 0 : undefined,
+                    padding: isFullscreen ? "1rem 1.25rem 1.5rem" : "0.5rem 0 0",
+                    background: isFullscreen
+                      ? "linear-gradient(transparent, rgba(0,0,0,0.75))"
+                      : "transparent",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
                 >
-                  {state}
+                  <p className="muted" style={{ textAlign: "center", margin: 0 }}>
+                    {livekitStatus || "Starting LiveAvatar…"}
+                  </p>
+                  <div
+                    className={`state-${state}`}
+                    style={{
+                      textAlign: "center",
+                      fontWeight: 700,
+                      textTransform: "capitalize",
+                    }}
+                  >
+                    {state}
+                  </div>
+                  {isFullscreen && (
+                    <div className="row" style={{ justifyContent: "center", marginTop: 4 }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => setCaptionsOn((v) => !v)}
+                      >
+                        {captionsOn ? "CC on" : "CC off"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => void toggleFullscreen()}
+                      >
+                        Exit full screen
+                      </button>
+                      <button type="button" className="btn btn-danger" onClick={endCall}>
+                        End call
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             ) : (
@@ -382,19 +490,35 @@ export default function ConversationPage() {
             </div>
           )}
 
-          <div className="row" style={{ justifyContent: "center" }}>
-            <button className="btn btn-secondary" onClick={() => setCaptionsOn((v) => !v)}>
-              {captionsOn ? "CC on" : "CC off"}
-            </button>
-            {session?.barge_in_enabled && !isLive && (
-              <button className="btn btn-secondary" onClick={interrupt}>
-                Interrupt
+          {!isFullscreen && (
+            <div className="row" style={{ justifyContent: "center" }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setCaptionsOn((v) => !v)}
+              >
+                {captionsOn ? "CC on" : "CC off"}
               </button>
-            )}
-            <button className="btn btn-danger" onClick={endCall}>
-              End call
-            </button>
-          </div>
+              {isLive && (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => void toggleFullscreen()}
+                  title="Make avatar full screen"
+                >
+                  Full screen
+                </button>
+              )}
+              {session?.barge_in_enabled && !isLive && (
+                <button type="button" className="btn btn-secondary" onClick={interrupt}>
+                  Interrupt
+                </button>
+              )}
+              <button type="button" className="btn btn-danger" onClick={endCall}>
+                End call
+              </button>
+            </div>
+          )}
 
           {!isLive && (
             <div className="row" style={{ marginTop: "1rem" }}>
