@@ -1,8 +1,58 @@
 from functools import lru_cache
 from typing import List
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def normalize_database_url(url: str) -> str:
+    """Normalize Postgres URLs for SQLAlchemy async + Supabase.
+
+    Accepts common provider forms:
+      - postgres://...
+      - postgresql://...
+      - postgresql+asyncpg://...
+      - postgresql+psycopg2://...
+    and rewrites to postgresql+asyncpg://...
+    Ensures sslmode=require for Supabase hosts when missing.
+    """
+    if not url:
+        return url
+    raw = url.strip().strip('"').strip("'")
+
+    # Railway / Heroku sometimes use postgres://
+    if raw.startswith("postgres://"):
+        raw = "postgresql://" + raw[len("postgres://") :]
+
+    # Drop sync drivers; async engine needs asyncpg
+    for prefix in (
+        "postgresql+psycopg2://",
+        "postgresql+psycopg://",
+        "postgresql+psycopg2cffi://",
+    ):
+        if raw.startswith(prefix):
+            raw = "postgresql+asyncpg://" + raw[len(prefix) :]
+            break
+    else:
+        if raw.startswith("postgresql://"):
+            raw = "postgresql+asyncpg://" + raw[len("postgresql://") :]
+
+    # Supabase requires SSL; asyncpg uses 'ssl' query param (or connect_args)
+    try:
+        parsed = urlparse(raw)
+        host = (parsed.hostname or "").lower()
+        is_supabase = "supabase.com" in host or "supabase.co" in host
+        if is_supabase or "pooler.supabase" in host:
+            q = dict(parse_qsl(parsed.query, keep_blank_values=True))
+            # asyncpg ignores sslmode; we keep it for tooling and handle SSL in database.py
+            if "sslmode" not in q:
+                q["sslmode"] = "require"
+            raw = urlunparse(parsed._replace(query=urlencode(q)))
+    except Exception:
+        pass
+
+    return raw
 
 
 class Settings(BaseSettings):
@@ -21,6 +71,13 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./arya.db"
     redis_url: str = "redis://localhost:6379/0"
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def _normalize_db(cls, v: object) -> object:
+        if isinstance(v, str):
+            return normalize_database_url(v)
+        return v
 
     heygen_api_key: str = ""
     anam_api_key: str = ""
