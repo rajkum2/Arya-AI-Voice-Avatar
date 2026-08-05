@@ -11,7 +11,8 @@ COPY app ./app
 
 RUN pip install --no-cache-dir -e .
 
-EXPOSE 8000
+# Railway injects PORT (often 8080). EXPOSE is informational; always bind $PORT.
+ENV PORT=8080
+EXPOSE 8080
 
-# Railway injects PORT; default 8000 for local Docker
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "echo \"Starting uvicorn on 0.0.0.0:${PORT:-8080}\" && exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080} --proxy-headers --forwarded-allow-ips='*'"]
