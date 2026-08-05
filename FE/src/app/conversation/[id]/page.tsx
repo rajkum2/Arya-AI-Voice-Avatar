@@ -30,6 +30,7 @@ export default function ConversationPage() {
   const wsRef = useRef<WebSocket | null>(null);
   const roomRef = useRef<Room | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const endCall = useCallback(async () => {
     try {
@@ -103,26 +104,50 @@ export default function ConversationPage() {
           const room = new Room({ adaptiveStream: true, dynacast: true });
           roomRef.current = room;
 
-          const attachVideo = (
+          const attachRemoteTrack = (
             track: RemoteTrack,
-            publication: RemoteTrackPublication,
+            _publication: RemoteTrackPublication,
             participant: RemoteParticipant
           ) => {
-            if (track.kind !== Track.Kind.Video) return;
-            if (!videoRef.current) return;
-            track.attach(videoRef.current);
-            setLivekitStatus(`Connected · ${participant.identity || "avatar"}`);
-            setState("speaking");
+            if (track.kind === Track.Kind.Video && videoRef.current) {
+              track.attach(videoRef.current);
+              videoRef.current.playsInline = true;
+              // Video muted — avatar voice plays on the separate <audio> element
+              videoRef.current.muted = true;
+              void videoRef.current.play().catch(() => undefined);
+              setLivekitStatus(`Connected · ${participant.identity || "avatar"}`);
+            }
+            if (track.kind === Track.Kind.Audio && audioRef.current) {
+              track.attach(audioRef.current);
+              audioRef.current.autoplay = true;
+              void audioRef.current.play().catch(() => {
+                setError(
+                  "Click anywhere on the page once to enable avatar sound (browser autoplay)."
+                );
+              });
+              setState("speaking");
+              setLivekitStatus(
+                `Connected · ${participant.identity || "avatar"} · audio on`
+              );
+            }
           };
 
           room.on(
             RoomEvent.TrackSubscribed,
             (track, publication, participant) => {
-              attachVideo(track, publication, participant);
+              attachRemoteTrack(track, publication, participant);
             }
           );
+          room.on(RoomEvent.TrackUnsubscribed, (track) => {
+            track.detach();
+          });
           room.on(RoomEvent.Disconnected, () => {
             setLivekitStatus("Disconnected");
+          });
+          room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+            const remoteSpeaking = speakers.some((p) => !p.isLocal);
+            if (remoteSpeaking) setState("speaking");
+            else setState("listening");
           });
 
           await room.connect(s.room_url, s.room_token);
@@ -139,11 +164,11 @@ export default function ConversationPage() {
             setLivekitStatus("Connected · mic blocked");
           }
 
-          // Attach already-subscribed video tracks
+          // Attach already-subscribed remote tracks (video AND audio)
           room.remoteParticipants.forEach((p) => {
             p.trackPublications.forEach((pub) => {
-              if (pub.track && pub.kind === Track.Kind.Video) {
-                attachVideo(pub.track as RemoteTrack, pub, p);
+              if (pub.track) {
+                attachRemoteTrack(pub.track as RemoteTrack, pub, p);
               }
             });
           });
@@ -267,6 +292,7 @@ export default function ConversationPage() {
                   ref={videoRef}
                   autoPlay
                   playsInline
+                  muted
                   style={{
                     width: "100%",
                     borderRadius: 16,
@@ -275,6 +301,8 @@ export default function ConversationPage() {
                     objectFit: "cover",
                   }}
                 />
+                {/* Avatar TTS / voice — must be attached separately from video */}
+                <audio ref={audioRef} autoPlay playsInline />
                 <p className="muted" style={{ textAlign: "center", marginTop: 8 }}>
                   {livekitStatus || "Starting LiveAvatar…"}
                 </p>
