@@ -1,3 +1,5 @@
+import logging
+import ssl
 from collections.abc import AsyncGenerator
 from urllib.parse import parse_qsl, urlparse, urlunparse
 
@@ -6,7 +8,16 @@ from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import get_settings
 
+logger = logging.getLogger("arya.db")
 settings = get_settings()
+
+
+def _ssl_context() -> ssl.SSLContext:
+    """TLS for Supabase/Railway. CERT_NONE avoids corporate/proxy cert issues."""
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    return ctx
 
 
 def _engine_url_and_args() -> tuple[str, dict]:
@@ -22,8 +33,12 @@ def _engine_url_and_args() -> tuple[str, dict]:
         host = (parsed.hostname or "").lower()
         q = dict(parse_qsl(parsed.query, keep_blank_values=True))
         sslmode = q.pop("sslmode", None)
-        # asyncpg does not accept sslmode as a libpq query arg
-        clean = urlunparse(parsed._replace(query="&".join(f"{k}={v}" for k, v in q.items()) if q else ""))
+        # asyncpg does not accept libpq-only query args
+        for drop in ("ssl", "channel_binding"):
+            q.pop(drop, None)
+        clean = urlunparse(
+            parsed._replace(query="&".join(f"{k}={v}" for k, v in q.items()) if q else "")
+        )
         if "asyncpg" not in clean:
             clean = clean.replace("postgresql://", "postgresql+asyncpg://", 1)
 
@@ -31,11 +46,16 @@ def _engine_url_and_args() -> tuple[str, dict]:
             sslmode in ("require", "verify-ca", "verify-full", "prefer")
             or "supabase.com" in host
             or "supabase.co" in host
+            or "pooler.supabase" in host
             or settings.environment == "production"
         )
-        if needs_ssl and not url.startswith("sqlite"):
-            # True enables TLS without custom cert verification (Supabase default)
-            connect_args["ssl"] = True
+        if needs_ssl:
+            connect_args["ssl"] = _ssl_context()
+        logger.info(
+            "DB engine host=%s ssl=%s",
+            host,
+            "yes" if needs_ssl else "no",
+        )
         return clean, connect_args
 
     return url, connect_args
