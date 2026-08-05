@@ -18,11 +18,17 @@ logging.basicConfig(level=logging.INFO)
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     # Create tables (Alembic recommended for prod; create_all for scaffold)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    async with AsyncSessionLocal() as db:
-        await seed_if_empty(db)
-    logger.info("Arya API ready (v%s)", __version__)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        async with AsyncSessionLocal() as db:
+            await seed_if_empty(db)
+        logger.info("Arya API ready (v%s) — DB connected", __version__)
+    except Exception:
+        # Stay up for /health so ops can see the service; DB routes will fail until fixed
+        logger.exception(
+            "Database init/seed failed — API is up but data routes will error"
+        )
     yield
     await engine.dispose()
 
