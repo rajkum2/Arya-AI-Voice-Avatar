@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -12,6 +12,7 @@ class CallCreateRequest(BaseModel):
     callee_name: str = Field(min_length=1, max_length=120)
     to_number: str = Field(pattern=E164_PATTERN)
     custom_args: dict[str, str] = {}
+    provider: Optional[Literal["ringg", "bolti"]] = None  # None = auto/default
 
 
 class CallOut(BaseModel):

@@ -26,7 +26,8 @@ FastAPI (BE)
    │
    │  CallProvider seam (phone-call channel)
    ├── MockCallProvider (default local)
-   └── RinggCallProvider (when RINGG_API_KEY set)
+   ├── RinggCallProvider (when RINGG_API_KEY set)
+   └── BoltiCallProvider (when BOLTI_TOKEN set)
    │
    └── WebSocket /ws/session/{id}  → captions + turn state
 ```
@@ -101,6 +102,7 @@ Open http://localhost:3000 → Log in → Consent → Gallery → Start conversa
 | GET | `/api/v1/calls` / `calls/{id}` | Call list + detail |
 | DELETE | `/api/v1/calls/{id}` | Cancel call |
 | POST | `/api/v1/webhooks/ringg` | Ringg event receiver (bearer token) |
+| POST | `/api/v1/webhooks/bolti` | Bolti event receiver (HMAC-signed) |
 | GET | `/api/v1/admin/dashboard` | Admin KPIs |
 | GET | `/api/v1/me/export` | GDPR export |
 
@@ -119,7 +121,7 @@ Until the key is set, the API **falls back to mock** so demos always work.
 
 ## Enabling Ringg phone calls (separate channel)
 
-**Full setup guide: [`docs/RINGG_SETUP.md`](docs/RINGG_SETUP.md)** (dashboard steps, env vars, webhook subscription script, troubleshooting).
+**Full setup guide: [`docs/RINGG_SETUP.md`](docs/RINGG_SETUP.md)** (dashboard steps, env vars, webhook subscription script, troubleshooting). For **Bolti AI** as an alternative provider (free trial minutes, HMAC-signed webhooks), see [`docs/BOLTI_SETUP.md`](docs/BOLTI_SETUP.md) — the web UI has a provider dropdown on the call card.
 
 Phone calls run on a **separate `CallProvider` seam** — no LiveKit, no video. Ringg owns the call end-to-end and reports results via webhook.
 

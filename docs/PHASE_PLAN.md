@@ -120,7 +120,7 @@ None.
 
 # PHASE 1B — Production hardening (Weeks 5–10)
 
-> **Delivered (scaffold):** Ringg AI phone-call channel — separate `CallProvider` seam (`providers/call_base.py`, `ringg.py`, `call_mock.py`, `call_registry.py`), `Call` model, `POST/GET/DELETE /api/v1/calls`, webhook receiver `POST /api/v1/webhooks/ringg` (bearer-token auth, idempotent dedupe on `call_id`+`event_type`, quota accounting), web UI ("Call my phone" on avatar detail, `/calls/{id}` status page, history section). Mock fallback when `RINGG_API_KEY` is unset.
+> **Delivered (scaffold):** Ringg AI phone-call channel — separate `CallProvider` seam (`providers/call_base.py`, `ringg.py`, `call_mock.py`, `call_registry.py`), `Call` model, `POST/GET/DELETE /api/v1/calls`, webhook receiver `POST /api/v1/webhooks/ringg` (bearer-token auth, idempotent dedupe on `call_id`+`event_type`, quota accounting), web UI ("Call my phone" on avatar detail, `/calls/{id}` status page, history section). Mock fallback when `RINGG_API_KEY` is unset. **Bolti AI** added as second provider (`providers/bolti.py`, per-call `provider` selection + dropdown in web UI, HMAC-SHA256-verified webhook `POST /api/v1/webhooks/bolti` with replay protection and rotation tolerance); setup in `docs/RINGG_SETUP.md` / `docs/BOLTI_SETUP.md`.
 
 ### Backend
 - Full admin APIs: personas, voices, KB upload stubs, moderation, audit log

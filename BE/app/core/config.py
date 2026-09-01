@@ -101,6 +101,15 @@ class Settings(BaseSettings):
     # When empty, the webhook endpoint rejects everything.
     ringg_webhook_token: str = ""
 
+    # ── Bolti AI phone-call channel (server-side only) ──
+    bolti_token: str = ""
+    bolti_base_url: str = "https://api.bolti.co.in/v1"
+    bolti_agent_id: str = ""
+    bolti_from_number: str = ""  # literal E.164 number (Bolti has no from_number_id)
+    # HMAC-SHA256 signing secret from Bolti dashboard → Settings → Webhooks.
+    # When empty, the webhook endpoint rejects everything.
+    bolti_webhook_secret: str = ""
+
     default_avatar_provider: str = "mock"
     livekit_url: str = ""
     livekit_api_key: str = ""

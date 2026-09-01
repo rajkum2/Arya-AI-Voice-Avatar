@@ -182,6 +182,7 @@ export const api = {
     callee_name: string;
     to_number: string;
     custom_args?: Record<string, string>;
+    provider?: "ringg" | "bolti";
   }) {
     return request<PhoneCall>("/api/v1/calls", {
       method: "POST",
