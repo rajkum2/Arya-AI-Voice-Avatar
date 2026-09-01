@@ -55,6 +55,23 @@ export type Session = {
   failover_reason?: string;
 };
 
+export type PhoneCall = {
+  id: string;
+  avatar_id?: string | null;
+  provider: string;
+  status: string;
+  callee_name: string;
+  to_number: string;
+  duration_sec: number;
+  transcript: string;
+  summary: string;
+  recording_url: string;
+  analysis: Record<string, unknown>;
+  mock_mode: boolean;
+  created_at: string;
+  ended_at?: string | null;
+};
+
 function authHeaders(): HeadersInit {
   if (typeof window === "undefined") return {};
   const token = localStorage.getItem("access_token");
@@ -158,6 +175,30 @@ export const api = {
         created_at: string;
       }>
     >("/api/v1/conversations");
+  },
+
+  startCall(body: {
+    avatar_id?: string;
+    callee_name: string;
+    to_number: string;
+    custom_args?: Record<string, string>;
+  }) {
+    return request<PhoneCall>("/api/v1/calls", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  },
+
+  listCalls() {
+    return request<PhoneCall[]>("/api/v1/calls");
+  },
+
+  getCall(id: string) {
+    return request<PhoneCall>(`/api/v1/calls/${id}`);
+  },
+
+  cancelCall(id: string) {
+    return request<PhoneCall>(`/api/v1/calls/${id}`, { method: "DELETE" });
   },
 
   exportData() {

@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
-from app.api.rest import admin, auth, avatars, bootstrap, privacy, sessions
+from app.api.rest import admin, auth, avatars, bootstrap, calls, privacy, sessions
 from app.api.ws.session_ws import router as ws_router
 from app.core.config import get_settings
 from app.core.database import Base, engine, AsyncSessionLocal
@@ -55,6 +55,7 @@ def create_app() -> FastAPI:
     app.include_router(bootstrap.router, prefix="/api/v1")
     app.include_router(avatars.router, prefix="/api/v1")
     app.include_router(sessions.router, prefix="/api/v1")
+    app.include_router(calls.router, prefix="/api/v1")
     app.include_router(admin.router, prefix="/api/v1")
     app.include_router(privacy.router, prefix="/api/v1")
     app.include_router(ws_router)

@@ -120,6 +120,8 @@ None.
 
 # PHASE 1B — Production hardening (Weeks 5–10)
 
+> **Delivered (scaffold):** Ringg AI phone-call channel — separate `CallProvider` seam (`providers/call_base.py`, `ringg.py`, `call_mock.py`, `call_registry.py`), `Call` model, `POST/GET/DELETE /api/v1/calls`, webhook receiver `POST /api/v1/webhooks/ringg` (bearer-token auth, idempotent dedupe on `call_id`+`event_type`, quota accounting), web UI ("Call my phone" on avatar detail, `/calls/{id}` status page, history section). Mock fallback when `RINGG_API_KEY` is unset.
+
 ### Backend
 - Full admin APIs: personas, voices, KB upload stubs, moderation, audit log
 - Encrypted API key storage (Fernet / KMS-ready)

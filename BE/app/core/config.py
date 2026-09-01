@@ -92,6 +92,15 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     elevenlabs_api_key: str = ""
 
+    # ── Ringg AI phone-call channel (server-side only) ──
+    ringg_api_key: str = ""
+    ringg_base_url: str = "https://prod-api.ringg.ai/ca/api/v0"
+    ringg_agent_id: str = ""
+    ringg_from_number_id: str = ""
+    # Secret Ringg must forward as "Authorization: Bearer ..." on webhook delivery.
+    # When empty, the webhook endpoint rejects everything.
+    ringg_webhook_token: str = ""
+
     default_avatar_provider: str = "mock"
     livekit_url: str = ""
     livekit_api_key: str = ""

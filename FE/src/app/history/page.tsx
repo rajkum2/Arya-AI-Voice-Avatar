@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Nav } from "@/components/Nav";
-import { api, isLoggedIn } from "@/lib/api";
+import { api, isLoggedIn, PhoneCall } from "@/lib/api";
 
 export default function HistoryPage() {
   const router = useRouter();
@@ -15,6 +15,7 @@ export default function HistoryPage() {
       created_at: string;
     }>
   >([]);
+  const [calls, setCalls] = useState<PhoneCall[]>([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -23,6 +24,7 @@ export default function HistoryPage() {
       return;
     }
     api.conversations().then(setItems).catch((e) => setError(e.message));
+    api.listCalls().then(setCalls).catch(() => {});
   }, [router]);
 
   return (
@@ -42,6 +44,26 @@ export default function HistoryPage() {
                 </div>
               </div>
               <span className="badge">{c.duration_sec}s</span>
+            </div>
+          ))}
+        </div>
+        <h1 style={{ marginTop: "2rem" }}>Phone calls</h1>
+        <div className="stack">
+          {calls.length === 0 && <p className="muted">No phone calls yet.</p>}
+          {calls.map((c) => (
+            <div
+              key={c.id}
+              className="card row"
+              style={{ justifyContent: "space-between", cursor: "pointer" }}
+              onClick={() => router.push(`/calls/${c.id}`)}
+            >
+              <div>
+                <strong>{c.callee_name}</strong>
+                <div className="muted" style={{ fontSize: "0.9rem" }}>
+                  {c.to_number} · {new Date(c.created_at).toLocaleString()}
+                </div>
+              </div>
+              <span className="badge">{c.status}</span>
             </div>
           ))}
         </div>

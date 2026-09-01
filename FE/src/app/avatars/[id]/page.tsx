@@ -11,6 +11,9 @@ export default function AvatarDetailPage() {
   const [avatar, setAvatar] = useState<Avatar | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [calleeName, setCalleeName] = useState("");
+  const [toNumber, setToNumber] = useState("");
+  const [callLoading, setCallLoading] = useState(false);
 
   useEffect(() => {
     if (!isLoggedIn()) {
@@ -31,6 +34,23 @@ export default function AvatarDetailPage() {
       setError(e instanceof Error ? e.message : "Could not start");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function startPhoneCall() {
+    setCallLoading(true);
+    setError("");
+    try {
+      const call = await api.startCall({
+        avatar_id: id,
+        callee_name: calleeName.trim(),
+        to_number: toNumber.trim(),
+      });
+      router.push(`/calls/${call.id}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not place call");
+    } finally {
+      setCallLoading(false);
     }
   }
 
@@ -74,6 +94,49 @@ export default function AvatarDetailPage() {
             )}
             <button className="btn btn-primary" onClick={start} disabled={loading}>
               {loading ? "Starting…" : "Start conversation"}
+            </button>
+          </div>
+        )}
+        {avatar && (
+          <div className="card stack" style={{ marginTop: "1rem" }}>
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <h2 style={{ margin: 0, fontSize: "1.1rem" }}>Get a phone call instead</h2>
+              <details style={{ fontSize: "0.85rem" }}>
+                <summary className="muted" style={{ cursor: "pointer" }}>
+                  ⓘ Setup info
+                </summary>
+                <div className="muted" style={{ marginTop: "0.5rem", maxWidth: 420 }}>
+                  An AI agent calls the number you enter — you&apos;ll be talking to an
+                  artificial voice, not a human. Calls run through Ringg AI: without a
+                  configured <code>RINGG_API_KEY</code> this runs in mock mode and
+                  auto-completes after a few seconds with a simulated transcript. To place
+                  real calls, set the <code>RINGG_*</code> env vars and subscribe the
+                  assistant webhook — see <code>docs/RINGG_SETUP.md</code> in the repo
+                  (helper script: <code>scripts/subscribe-ringg-webhook.sh</code>).
+                </div>
+              </details>
+            </div>
+            <p className="muted" style={{ margin: 0, fontSize: "0.9rem" }}>
+              {avatar.name} calls your phone (E.164 format, e.g. +919876543210).
+            </p>
+            <input
+              type="text"
+              placeholder="Your name"
+              value={calleeName}
+              onChange={(e) => setCalleeName(e.target.value)}
+            />
+            <input
+              type="tel"
+              placeholder="+919876543210"
+              value={toNumber}
+              onChange={(e) => setToNumber(e.target.value)}
+            />
+            <button
+              className="btn"
+              onClick={startPhoneCall}
+              disabled={callLoading || !calleeName.trim() || !toNumber.trim()}
+            >
+              {callLoading ? "Calling…" : "Call my phone"}
             </button>
           </div>
         )}

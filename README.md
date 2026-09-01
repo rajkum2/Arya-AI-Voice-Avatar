@@ -24,6 +24,10 @@ FastAPI (BE)
    ├── HeyGenProvider (when HEYGEN_API_KEY set)
    └── AnamProvider (scaffold)
    │
+   │  CallProvider seam (phone-call channel)
+   ├── MockCallProvider (default local)
+   └── RinggCallProvider (when RINGG_API_KEY set)
+   │
    └── WebSocket /ws/session/{id}  → captions + turn state
 ```
 
@@ -93,6 +97,10 @@ Open http://localhost:3000 → Log in → Consent → Gallery → Start conversa
 | POST | `/api/v1/sessions` | Mint provider session |
 | DELETE | `/api/v1/sessions/{id}` | End + quota |
 | WS | `/ws/session/{id}?token=` | Captions + turn state |
+| POST | `/api/v1/calls` | Outbound phone call (Ringg channel) |
+| GET | `/api/v1/calls` / `calls/{id}` | Call list + detail |
+| DELETE | `/api/v1/calls/{id}` | Cancel call |
+| POST | `/api/v1/webhooks/ringg` | Ringg event receiver (bearer token) |
 | GET | `/api/v1/admin/dashboard` | Admin KPIs |
 | GET | `/api/v1/me/export` | GDPR export |
 
@@ -109,13 +117,27 @@ Until the key is set, the API **falls back to mock** so demos always work.
 
 ---
 
+## Enabling Ringg phone calls (separate channel)
+
+**Full setup guide: [`docs/RINGG_SETUP.md`](docs/RINGG_SETUP.md)** (dashboard steps, env vars, webhook subscription script, troubleshooting).
+
+Phone calls run on a **separate `CallProvider` seam** — no LiveKit, no video. Ringg owns the call end-to-end and reports results via webhook.
+
+1. Set in `.env`: `RINGG_API_KEY`, `RINGG_AGENT_ID`, `RINGG_FROM_NUMBER_ID`, `RINGG_WEBHOOK_TOKEN` (a secret you invent).  
+2. Expose the backend for webhooks locally: `ngrok http 8000`, then subscribe the assistant in Ringg to `https://<ngrok>/api/v1/webhooks/ringg` with header `Authorization: Bearer <RINGG_WEBHOOK_TOKEN>`.  
+3. Web UI: avatar detail page → **"Get a phone call instead"** → status page polls until `completed` and shows transcript/summary. History page lists calls.
+
+Without `RINGG_API_KEY` the channel falls back to a mock call provider, so the flow is demo-able offline.
+
+---
+
 ## Phase status
 
 | Phase | Status |
 |-------|--------|
 | 0 Foundations | ✅ Scaffold, compose, seed, docs |
 | 1A Conversation MVP | ✅ Mock path end-to-end (web + Android structure) |
-| 1B Hardening | 🔲 Real LiveKit, full admin CRUD UI, billing |
+| 1B Hardening | 🔲 Real LiveKit, full admin CRUD UI, billing — ✅ Ringg phone-call channel (outbound + webhooks, mock fallback) |
 | 2 Multi-provider | 🔲 Anam/Tavus production |
 | 3 In-house render | 🔲 MuseTalk/Ditto |
 
