@@ -13,6 +13,7 @@ export default function AvatarDetailPage() {
   const [loading, setLoading] = useState(false);
   const [calleeName, setCalleeName] = useState("");
   const [toNumber, setToNumber] = useState("");
+  const [callProvider, setCallProvider] = useState<"auto" | "ringg" | "bolti">("auto");
   const [callLoading, setCallLoading] = useState(false);
 
   useEffect(() => {
@@ -45,6 +46,7 @@ export default function AvatarDetailPage() {
         avatar_id: id,
         callee_name: calleeName.trim(),
         to_number: toNumber.trim(),
+        ...(callProvider !== "auto" ? { provider: callProvider } : {}),
       });
       router.push(`/calls/${call.id}`);
     } catch (e) {
@@ -107,12 +109,13 @@ export default function AvatarDetailPage() {
                 </summary>
                 <div className="muted" style={{ marginTop: "0.5rem", maxWidth: 420 }}>
                   An AI agent calls the number you enter — you&apos;ll be talking to an
-                  artificial voice, not a human. Calls run through Ringg AI: without a
-                  configured <code>RINGG_API_KEY</code> this runs in mock mode and
-                  auto-completes after a few seconds with a simulated transcript. To place
-                  real calls, set the <code>RINGG_*</code> env vars and subscribe the
-                  assistant webhook — see <code>docs/RINGG_SETUP.md</code> in the repo
-                  (helper script: <code>scripts/subscribe-ringg-webhook.sh</code>).
+                  artificial voice, not a human. Calls run through Ringg AI or Bolti AI
+                  (pick one below, or leave on Auto): without configured provider keys
+                  this runs in mock mode and auto-completes after a few seconds with a
+                  simulated transcript. To place real calls, set the{" "}
+                  <code>RINGG_*</code> / <code>BOLTI_*</code> env vars and configure the
+                  webhook — see <code>docs/RINGG_SETUP.md</code> and{" "}
+                  <code>docs/BOLTI_SETUP.md</code> in the repo.
                 </div>
               </details>
             </div>
@@ -131,6 +134,19 @@ export default function AvatarDetailPage() {
               value={toNumber}
               onChange={(e) => setToNumber(e.target.value)}
             />
+            <label className="muted" style={{ fontSize: "0.9rem" }}>
+              Provider{" "}
+              <select
+                value={callProvider}
+                onChange={(e) =>
+                  setCallProvider(e.target.value as "auto" | "ringg" | "bolti")
+                }
+              >
+                <option value="auto">Auto (backend default)</option>
+                <option value="ringg">Ringg AI</option>
+                <option value="bolti">Bolti AI</option>
+              </select>
+            </label>
             <button
               className="btn"
               onClick={startPhoneCall}

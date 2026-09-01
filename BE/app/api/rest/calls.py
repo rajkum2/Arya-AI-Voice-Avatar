@@ -1,3 +1,6 @@
+import hashlib
+import hmac
+import time
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request
@@ -94,4 +97,75 @@ async def ringg_webhook(request: Request, db: DbSession) -> None:
 
     event = await request.json()
     await apply_webhook_event(db, event)
+    return None
+
+
+def _verify_bolti_signature(raw: bytes, header: str, secret: str) -> bool:
+    """Bolti HMAC-SHA256: header is 't=<unix_ts>,v1=<hex>[,v1=<hex>]';
+    digest is HMAC(secret, '<ts>.<raw_body>'). Multiple v1 values are sent
+    during secret rotation — accept if ANY matches."""
+    try:
+        parts = dict(p.split("=", 1) for p in header.split(",") if "=" in p)
+        ts = parts.get("t", "")
+        if abs(time.time() - int(ts)) > 300:  # replay protection
+            return False
+    except (ValueError, AttributeError):
+        return False
+    expected = hmac.new(
+        secret.encode(), f"{ts}.".encode() + raw, hashlib.sha256
+    ).hexdigest()
+    digests = [p[3:] for p in header.split(",") if p.startswith("v1=")]
+    return any(hmac.compare_digest(expected, d) for d in digests)
+
+
+def _normalize_bolti_event(event_type: str, payload: dict) -> dict:
+    """Map a Bolti webhook onto the generic shape apply_webhook_event expects."""
+    conversation_id = str(
+        payload.get("conversation_id")
+        or (payload.get("conversation") or {}).get("id")
+        or ""
+    )
+    event: dict = {
+        "call_id": conversation_id,
+        # Dedupe on the durable event id when present, else fall back
+        "event_type": str(payload.get("id") or f"{conversation_id}:{event_type}"),
+    }
+    if event_type == "conversation.completed":
+        event["call_status"] = "completed"
+        event["duration"] = payload.get("duration_sec") or payload.get("duration") or 0
+        if payload.get("transcript"):
+            event["transcript"] = payload["transcript"]
+        if payload.get("recording_url"):
+            event["recording_url"] = payload["recording_url"]
+        analysis = payload.get("analysis") or payload.get("summary")
+        if isinstance(analysis, dict):
+            event["analysis"] = analysis
+        elif isinstance(analysis, str) and analysis:
+            event["analysis"] = {"summary": analysis}
+    elif event_type == "scheduled_call.failed":
+        event["call_status"] = "failed"
+    elif event_type == "scheduled_call.cancelled":
+        event["call_status"] = "cancelled"
+    # other events (scheduled_call.created/dispatched, campaign.completed) → no-op
+    return event
+
+
+@router.post("/webhooks/bolti", status_code=204)
+async def bolti_webhook(request: Request, db: DbSession) -> None:
+    """Bolti event receiver. Verifies the HMAC-SHA256 signature over the RAW
+    body (re-serialized JSON would not match)."""
+    settings = get_settings()
+    if not settings.bolti_webhook_secret:
+        raise HTTPException(status_code=503, detail="Webhook secret not configured")
+
+    raw = await request.body()
+    signature = request.headers.get("X-Voiceai-Signature", "")
+    if not _verify_bolti_signature(raw, signature, settings.bolti_webhook_secret):
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
+
+    event_type = request.headers.get("X-Voiceai-Event", "")
+    payload = await request.json()
+    event = _normalize_bolti_event(event_type, payload)
+    if event.get("call_id") and event.get("call_status"):
+        await apply_webhook_event(db, event)
     return None

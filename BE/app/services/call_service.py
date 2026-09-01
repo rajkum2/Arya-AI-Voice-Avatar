@@ -59,7 +59,7 @@ async def create_call(
     custom_args.setdefault("callee_name", body.callee_name)
 
     callback_url = f"{callback_base_url.rstrip('/')}/api/v1/webhooks/ringg"
-    provider = get_call_provider("ringg")
+    provider = get_call_provider(body.provider)
     try:
         result = await provider.start_call(
             callee_name=body.callee_name,
@@ -127,6 +127,8 @@ async def apply_webhook_event(db: AsyncSession, event: dict) -> bool:
     ).scalar_one_or_none()
     if not call:
         return False
+    if call.status in TERMINAL_STATUSES:
+        return False  # already final — late events must not overwrite results
 
     dedupe_key = f"{provider_call_id}:{event_type}"
     processed = list(call.processed_events or [])
@@ -136,7 +138,7 @@ async def apply_webhook_event(db: AsyncSession, event: dict) -> bool:
     call.processed_events = processed
 
     status_value = str(event.get("call_status") or event.get("status") or "")
-    if event_type in ("call_completed", "all_processing_completed"):
+    if event_type in ("call_completed", "all_processing_completed") or status_value == "completed":
         call.status = "completed"
         call.ended_at = datetime.now(timezone.utc)
         duration = event.get("duration") or event.get("call_duration") or 0
