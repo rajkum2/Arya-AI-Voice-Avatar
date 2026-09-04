@@ -38,6 +38,8 @@ def get_call_provider(name: str | None = None) -> CallProvider:
     (same fallback philosophy as the avatar provider registry)."""
     providers = _call_providers()
     key = (name or "").lower()
+    if key == "mock":
+        return providers["mock"]
     if key in ("ringg", "bolti"):
         return providers[key] if _configured(key) else providers["mock"]
     # Auto/default: prefer Ringg, then Bolti, then mock

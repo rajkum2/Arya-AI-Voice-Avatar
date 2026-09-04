@@ -1,15 +1,11 @@
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-
-logger = logging.getLogger("arya")
-
-MOCK_AUTOCOMPLETE_DELAY_SEC = 8
 
 from app.core.config import get_settings
 from app.models.avatar import Avatar
@@ -19,6 +15,10 @@ from app.providers.call_base import CallResult
 from app.providers.call_registry import get_call_provider
 from app.schemas.call import CallCreateRequest
 from app.services.session_service import _latest_consent
+
+logger = logging.getLogger("arya")
+
+MOCK_AUTOCOMPLETE_DELAY_SEC = 8
 
 TERMINAL_STATUSES = {"completed", "failed", "cancelled", "error"}
 
@@ -91,7 +91,7 @@ async def create_call(
         to_number=body.to_number,
         status=result.status,
         custom_args=custom_args,
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
     )
     db.add(call)
     await db.flush()
@@ -105,9 +105,9 @@ async def terminate_call(db: AsyncSession, user: User, call: Call) -> Call:
     try:
         await provider.terminate_call(call.provider_call_id)
     except Exception:  # noqa: BLE001
-        pass
+        logger.warning("Provider terminate failed for %s", call.provider_call_id)
     call.status = "cancelled"
-    call.ended_at = datetime.now(timezone.utc)
+    call.ended_at = datetime.now(UTC)
     await db.flush()
     return call
 
@@ -138,9 +138,10 @@ async def apply_webhook_event(db: AsyncSession, event: dict) -> bool:
     call.processed_events = processed
 
     status_value = str(event.get("call_status") or event.get("status") or "")
-    if event_type in ("call_completed", "all_processing_completed") or status_value == "completed":
+    completed_event = event_type in ("call_completed", "all_processing_completed")
+    if status_value == "completed" or (completed_event and status_value not in TERMINAL_STATUSES):
         call.status = "completed"
-        call.ended_at = datetime.now(timezone.utc)
+        call.ended_at = datetime.now(UTC)
         duration = event.get("duration") or event.get("call_duration") or 0
         try:
             call.duration_sec = int(duration)
@@ -166,7 +167,7 @@ async def apply_webhook_event(db: AsyncSession, event: dict) -> bool:
                 owner.used_minutes = min(owner.quota_minutes, owner.used_minutes + minutes)
     elif status_value in TERMINAL_STATUSES:
         call.status = status_value
-        call.ended_at = datetime.now(timezone.utc)
+        call.ended_at = datetime.now(UTC)
     elif status_value:
         call.status = status_value
 
@@ -193,7 +194,7 @@ def schedule_mock_autocomplete(result: CallResult) -> None:
             async with AsyncSessionLocal() as db:
                 await apply_webhook_event(db, event)
                 await db.commit()
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.exception("Mock call auto-complete failed")
 
     asyncio.create_task(_auto_complete())

@@ -1,39 +1,13 @@
-import hashlib
-import hmac
 import json
 import time
 
 import pytest
-
-from app.core.config import get_settings
-
-from test_calls import WEBHOOK_TOKEN, _register_and_consent, client  # noqa: F401
-
-BOLTI_SECRET = "test-bolti-secret"
-
-
-def _bolti_headers(secret: str, raw: bytes, event_type: str, ts: int | None = None):
-    ts = ts if ts is not None else int(time.time())
-    digest = hmac.new(secret.encode(), f"{ts}.".encode() + raw, hashlib.sha256).hexdigest()
-    return {
-        "X-Voiceai-Event": event_type,
-        "X-Voiceai-Signature": f"t={ts},v1={digest}",
-        "Content-Type": "application/json",
-    }
-
-
-@pytest.fixture
-def bolti_secret():
-    settings = get_settings()
-    original = settings.bolti_webhook_secret
-    settings.bolti_webhook_secret = BOLTI_SECRET
-    yield BOLTI_SECRET
-    settings.bolti_webhook_secret = original
+from conftest import bolti_headers, get_provider_call_id, register_and_consent
 
 
 @pytest.mark.asyncio
 async def test_bolti_unconfigured_falls_back_to_mock(client):
-    headers = await _register_and_consent(client)
+    headers = await register_and_consent(client)
     r = await client.post(
         "/api/v1/calls",
         headers=headers,
@@ -50,7 +24,7 @@ async def test_bolti_unconfigured_falls_back_to_mock(client):
 
 @pytest.mark.asyncio
 async def test_bolti_webhook_signature_and_completion(client, bolti_secret):
-    headers = await _register_and_consent(client)
+    headers = await register_and_consent(client)
     r = await client.post(
         "/api/v1/calls",
         headers=headers,
@@ -61,9 +35,7 @@ async def test_bolti_webhook_signature_and_completion(client, bolti_secret):
 
     # Mock provider made the call (Bolti unconfigured) — reuse its id as the
     # conversation_id, since the webhook matches on provider_call_id.
-    from test_calls import _provider_call_id
-
-    conversation_id = await _provider_call_id(call_id)
+    conversation_id = await get_provider_call_id(call_id)
 
     payload = {
         "id": "evt_bolti_1",
@@ -78,7 +50,7 @@ async def test_bolti_webhook_signature_and_completion(client, bolti_secret):
     # Bad signature rejected
     r = await client.post(
         "/api/v1/webhooks/bolti",
-        headers={**_bolti_headers(bolti_secret, raw, "conversation.completed"),
+        headers={**bolti_headers(bolti_secret, raw, "conversation.completed"),
                  "X-Voiceai-Signature": f"t={int(time.time())},v1=deadbeef"},
         content=raw,
     )
@@ -87,7 +59,7 @@ async def test_bolti_webhook_signature_and_completion(client, bolti_secret):
     # Stale timestamp rejected (>5 min replay window)
     r = await client.post(
         "/api/v1/webhooks/bolti",
-        headers=_bolti_headers(bolti_secret, raw, "conversation.completed",
+        headers=bolti_headers(bolti_secret, raw, "conversation.completed",
                                ts=int(time.time()) - 600),
         content=raw,
     )
@@ -96,7 +68,7 @@ async def test_bolti_webhook_signature_and_completion(client, bolti_secret):
     # Valid signature applies the completion
     r = await client.post(
         "/api/v1/webhooks/bolti",
-        headers=_bolti_headers(bolti_secret, raw, "conversation.completed"),
+        headers=bolti_headers(bolti_secret, raw, "conversation.completed"),
         content=raw,
     )
     assert r.status_code == 204
@@ -114,7 +86,7 @@ async def test_bolti_webhook_signature_and_completion(client, bolti_secret):
     used = r.json()["used_minutes"]
     r = await client.post(
         "/api/v1/webhooks/bolti",
-        headers=_bolti_headers(bolti_secret, raw, "conversation.completed"),
+        headers=bolti_headers(bolti_secret, raw, "conversation.completed"),
         content=raw,
     )
     assert r.status_code == 204

@@ -1,54 +1,16 @@
 import asyncio
-import uuid
 
 import pytest
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
+from conftest import WEBHOOK_TOKEN, get_provider_call_id, register_and_consent
 
-import app.services.call_service as call_service
 from app.core.config import get_settings
-from app.core.database import AsyncSessionLocal
-from app.main import app
-from app.models.call import Call
 from app.providers.call_registry import get_call_provider
-
-WEBHOOK_TOKEN = "test-webhook-token"
-
-
-async def _register_and_consent(client: AsyncClient, consent: bool = True) -> dict:
-    email = f"calltest-{uuid.uuid4().hex[:8]}@example.com"
-    r = await client.post(
-        "/api/v1/auth/register",
-        json={"email": email, "password": "testpass123", "display_name": "Call Test"},
-    )
-    assert r.status_code == 200, r.text
-    headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
-    if consent:
-        r = await client.post(
-            "/api/v1/auth/consent",
-            headers=headers,
-            json={
-                "understand_ai": True,
-                "voice_processing": True,
-                "store_transcripts": True,
-                "improve_service": False,
-            },
-        )
-        assert r.status_code == 200, r.text
-    return headers
-
-
-@pytest.fixture
-async def client():
-    transport = ASGITransport(app=app)
-    async with app.router.lifespan_context(app):
-        async with AsyncClient(transport=transport, base_url="http://test") as c:
-            yield c
+from app.services import call_service
 
 
 @pytest.mark.asyncio
 async def test_create_call_mock_mode(client):
-    headers = await _register_and_consent(client)
+    headers = await register_and_consent(client)
     r = await client.post(
         "/api/v1/calls",
         headers=headers,
@@ -63,7 +25,7 @@ async def test_create_call_mock_mode(client):
 
 @pytest.mark.asyncio
 async def test_create_call_requires_consent(client):
-    headers = await _register_and_consent(client, consent=False)
+    headers = await register_and_consent(client, consent=False)
     r = await client.post(
         "/api/v1/calls",
         headers=headers,
@@ -74,7 +36,7 @@ async def test_create_call_requires_consent(client):
 
 @pytest.mark.asyncio
 async def test_create_call_bad_number(client):
-    headers = await _register_and_consent(client)
+    headers = await register_and_consent(client)
     r = await client.post(
         "/api/v1/calls",
         headers=headers,
@@ -83,18 +45,10 @@ async def test_create_call_bad_number(client):
     assert r.status_code == 422
 
 
-async def _provider_call_id(call_id: str) -> str:
-    async with AsyncSessionLocal() as db:
-        call = (
-            await db.execute(select(Call).where(Call.id == uuid.UUID(call_id)))
-        ).scalar_one()
-        return call.provider_call_id
-
-
 @pytest.mark.asyncio
 async def test_mock_call_autocompletes(client, monkeypatch):
     monkeypatch.setattr(call_service, "MOCK_AUTOCOMPLETE_DELAY_SEC", 0.1)
-    headers = await _register_and_consent(client)
+    headers = await register_and_consent(client)
     r = await client.post(
         "/api/v1/calls",
         headers=headers,
@@ -118,7 +72,7 @@ async def test_webhook_flow_and_idempotency(client):
     original_token = settings.ringg_webhook_token
     settings.ringg_webhook_token = WEBHOOK_TOKEN
     try:
-        headers = await _register_and_consent(client)
+        headers = await register_and_consent(client)
         r = await client.post(
             "/api/v1/calls",
             headers=headers,
@@ -126,7 +80,7 @@ async def test_webhook_flow_and_idempotency(client):
         )
         assert r.status_code == 200, r.text
         call_id = r.json()["id"]
-        provider_call_id = await _provider_call_id(call_id)
+        provider_call_id = await get_provider_call_id(call_id)
 
         mock = get_call_provider("mock")
         event = mock.simulate_completion(provider_call_id)
