@@ -22,6 +22,50 @@ from app.services.session_service import _latest_consent
 
 TERMINAL_STATUSES = {"completed", "failed", "cancelled", "error"}
 
+# Each vendor authenticates its webhooks differently (Ringg: bearer token,
+# Bolti: HMAC signature), so they have separate receivers.
+WEBHOOK_PATHS = {
+    "ringg": "/api/v1/webhooks/ringg",
+    "bolti": "/api/v1/webhooks/bolti",
+}
+
+
+def _provider_identity(provider_name: str) -> tuple[str, str]:
+    """Agent id + from-number for one provider.
+
+    Every vendor issues its own ids, and they are not interchangeable: Ringg
+    wants a from_number_id (a UUID from its numbers API), Bolti wants a literal
+    E.164 number. Sending one vendor's ids to the other dials from the wrong
+    identity or fails outright.
+    """
+    settings = get_settings()
+    if provider_name == "ringg":
+        return settings.ringg_agent_id, settings.ringg_from_number_id
+    if provider_name == "bolti":
+        return settings.bolti_agent_id, settings.bolti_from_number
+    return "", ""
+
+
+def _persona_args(avatar: Avatar | None) -> dict[str, str]:
+    """Persona fields the vendor prompt can interpolate.
+
+    The vendor owns the conversation, so template variables are the only route
+    our Persona rows have onto the call. A matching placeholder must exist in
+    the vendor assistant prompt (Ringg: `@{{avatar_name}}`) or the value is
+    ignored -- and some vendors reject variables they have no placeholder for,
+    which is what CALL_SEND_PERSONA turns off.
+    """
+    if avatar is None:
+        return {}
+    persona = next((p for p in avatar.personas if p.is_published), None)
+    if persona is None:
+        return {}
+    return {
+        "avatar_name": avatar.name,
+        "greeting": persona.greeting,
+        "system_prompt": persona.system_prompt,
+    }
+
 
 async def create_call(
     db: AsyncSession,
@@ -57,15 +101,24 @@ async def create_call(
 
     custom_args = dict(body.custom_args)
     custom_args.setdefault("callee_name", body.callee_name)
+    if settings.call_send_persona:
+        # Explicit per-call values win over the avatar's persona defaults
+        for key, value in _persona_args(avatar).items():
+            if value:
+                custom_args.setdefault(key, value)
 
-    callback_url = f"{callback_base_url.rstrip('/')}/api/v1/webhooks/ringg"
     provider = get_call_provider(body.provider)
+    agent_id, from_number = _provider_identity(provider.name)
+    webhook_path = WEBHOOK_PATHS.get(provider.name, "")
+    callback_url = (
+        f"{callback_base_url.rstrip('/')}{webhook_path}" if webhook_path else ""
+    )
     try:
         result = await provider.start_call(
             callee_name=body.callee_name,
             to_number=body.to_number,
-            agent_id=settings.ringg_agent_id,
-            from_number_id=settings.ringg_from_number_id,
+            agent_id=agent_id,
+            from_number_id=from_number,
             custom_args=custom_args,
             callback_url=callback_url,
         )
@@ -75,10 +128,10 @@ async def create_call(
         result = await provider.start_call(
             callee_name=body.callee_name,
             to_number=body.to_number,
-            agent_id=settings.ringg_agent_id,
-            from_number_id=settings.ringg_from_number_id,
+            agent_id="",
+            from_number_id="",
             custom_args=custom_args,
-            callback_url=callback_url,
+            callback_url="",
         )
         result.metadata["failover_reason"] = str(exc)
 

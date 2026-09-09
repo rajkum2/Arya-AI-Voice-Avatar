@@ -80,6 +80,28 @@ Debug order:
 - **Rang but status stuck** → webhook delivery: inspect `http://127.0.0.1:4040` (ngrok web interface) for the POST. `401` = token mismatch with `RINGG_WEBHOOK_TOKEN`; `204` = processed fine.
 - **Call ran as `mock` unexpectedly** → one of `RINGG_API_KEY` / `RINGG_AGENT_ID` / `RINGG_FROM_NUMBER_ID` is unset; the failover reason is logged and stored on the call metadata.
 
-## 5. Known caveat
+## 5. Persona variables
+
+The backend sends the selected avatar's persona to Ringg as custom variables, so
+gallery selection actually changes the call:
+
+| Variable | Source |
+|---|---|
+| `callee_name` | always sent — `CallCreateRequest.callee_name` |
+| `avatar_name` | `Avatar.name` |
+| `greeting` | published `Persona.greeting` |
+| `system_prompt` | published `Persona.system_prompt` |
+
+These only take effect if the assistant prompt declares matching placeholders.
+In the dashboard: **Assistants → your assistant → Custom Variables**, add each
+key with the exact spelling above, then reference them in the prompt as
+`@{{avatar_name}}` etc. A variable with no placeholder is ignored.
+
+Explicit `custom_args` on the API request override the persona values.
+
+Set `CALL_SEND_PERSONA=false` to send only `callee_name` — use this if Ringg
+starts rejecting variables it has no placeholder for.
+
+## 6. Known caveat
 
 We use Ringg's `/calling/outbound/individual` (explicit `from_number_id`). Ringg marks it **deprecated** in favor of the number-pool `v2` endpoint — still works today; migrating later is a one-function change inside `RinggCallProvider.start_call` in `BE/app/providers/ringg.py`.

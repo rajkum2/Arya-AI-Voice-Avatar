@@ -169,3 +169,102 @@ async def test_webhook_flow_and_idempotency(client):
         assert r.json()["used_minutes"] == used_after_first
     finally:
         settings.ringg_webhook_token = original_token
+
+
+async def _call_custom_args(call_id: str) -> dict:
+    async with AsyncSessionLocal() as db:
+        call = (
+            await db.execute(select(Call).where(Call.id == uuid.UUID(call_id)))
+        ).scalar_one()
+        return dict(call.custom_args or {})
+
+
+async def _first_avatar_id(client: AsyncClient) -> str:
+    r = await client.get("/api/v1/avatars")
+    assert r.status_code == 200, r.text
+    avatars = r.json()
+    assert avatars, "seed should have created avatars"
+    return avatars[0]["id"]
+
+
+def test_provider_identity_is_per_provider(monkeypatch):
+    """Regression: Bolti used to receive Ringg's agent id and from_number_id."""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "ringg_agent_id", "ringg-agent")
+    monkeypatch.setattr(settings, "ringg_from_number_id", "ringg-number-uuid")
+    monkeypatch.setattr(settings, "bolti_agent_id", "bolti-agent")
+    monkeypatch.setattr(settings, "bolti_from_number", "+919999999999")
+
+    assert call_service._provider_identity("ringg") == (
+        "ringg-agent",
+        "ringg-number-uuid",
+    )
+    assert call_service._provider_identity("bolti") == (
+        "bolti-agent",
+        "+919999999999",
+    )
+    assert call_service._provider_identity("mock") == ("", "")
+
+
+@pytest.mark.asyncio
+async def test_persona_flows_into_custom_args(client):
+    headers = await _register_and_consent(client)
+    avatar_id = await _first_avatar_id(client)
+    r = await client.post(
+        "/api/v1/calls",
+        headers=headers,
+        json={
+            "avatar_id": avatar_id,
+            "callee_name": "Rahul",
+            "to_number": "+919876543210",
+        },
+    )
+    assert r.status_code == 200, r.text
+
+    args = await _call_custom_args(r.json()["id"])
+    assert args["callee_name"] == "Rahul"
+    # Persona reached the vendor payload instead of being loaded and dropped
+    assert args["avatar_name"]
+    assert args["greeting"]
+    assert args["system_prompt"]
+
+
+@pytest.mark.asyncio
+async def test_explicit_custom_args_win_over_persona(client):
+    headers = await _register_and_consent(client)
+    avatar_id = await _first_avatar_id(client)
+    r = await client.post(
+        "/api/v1/calls",
+        headers=headers,
+        json={
+            "avatar_id": avatar_id,
+            "callee_name": "Rahul",
+            "to_number": "+919876543210",
+            "custom_args": {"greeting": "Custom opener"},
+        },
+    )
+    assert r.status_code == 200, r.text
+
+    args = await _call_custom_args(r.json()["id"])
+    assert args["greeting"] == "Custom opener"
+    assert args["avatar_name"]  # other persona fields still fill in
+
+
+@pytest.mark.asyncio
+async def test_persona_omitted_when_disabled(client, monkeypatch):
+    monkeypatch.setattr(get_settings(), "call_send_persona", False)
+    headers = await _register_and_consent(client)
+    avatar_id = await _first_avatar_id(client)
+    r = await client.post(
+        "/api/v1/calls",
+        headers=headers,
+        json={
+            "avatar_id": avatar_id,
+            "callee_name": "Rahul",
+            "to_number": "+919876543210",
+        },
+    )
+    assert r.status_code == 200, r.text
+
+    args = await _call_custom_args(r.json()["id"])
+    assert args == {"callee_name": "Rahul"}
