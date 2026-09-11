@@ -26,5 +26,8 @@ android-app/.idea/
 .env
 .DS_Store
 .idea/
-.vscode/
 *.log
+branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat
+.gitignore
