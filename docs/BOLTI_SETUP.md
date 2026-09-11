@@ -60,6 +60,14 @@ Debug order:
 - **Rang but status stuck** → webhook: Bolti dashboard shows delivery attempts + auto-disabled endpoints; `401` on our side = wrong `BOLTI_WEBHOOK_SECRET`, stale clock, or body tampering.
 - **Ran as `mock` unexpectedly** → one of `BOLTI_TOKEN` / `BOLTI_AGENT_ID` / `BOLTI_FROM_NUMBER` is unset.
 
-## 5. Out of scope (for later)
+## 5. Persona variables
+
+The avatar's persona is sent in `custom_variables` alongside Bolti's own
+`customer_name`: `callee_name`, `avatar_name`, `greeting`, `system_prompt`
+(from the published `Persona` row). Declare matching variables on the agent for
+them to take effect. Explicit `custom_args` on the request win over the
+persona. `CALL_SEND_PERSONA=false` sends only `callee_name`.
+
+## 6. Out of scope (for later)
 
 Scheduled calls (`POST /v1/scheduled-calls` + `Idempotency-Key`), bulk/recurring campaigns, MCP server, dead-letter replay tooling.
