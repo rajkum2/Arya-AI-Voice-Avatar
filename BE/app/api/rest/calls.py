@@ -97,6 +97,7 @@ async def ringg_webhook(request: Request, db: DbSession) -> None:
 
     event = await request.json()
     await apply_webhook_event(db, event)
+    return None
 
 
 def _verify_bolti_signature(raw: bytes, header: str, secret: str) -> bool:
@@ -167,3 +168,4 @@ async def bolti_webhook(request: Request, db: DbSession) -> None:
     event = _normalize_bolti_event(event_type, payload)
     if event.get("call_id") and event.get("call_status"):
         await apply_webhook_event(db, event)
+    return None
