@@ -110,6 +110,11 @@ class Settings(BaseSettings):
     # When empty, the webhook endpoint rejects everything.
     bolti_webhook_secret: str = ""
 
+    # Send the avatar's persona (name / greeting / system prompt) to the call
+    # vendor as template variables. Turn off if a vendor rejects variables it
+    # has no matching placeholder for.
+    call_send_persona: bool = True
+
     default_avatar_provider: str = "mock"
     livekit_url: str = ""
     livekit_api_key: str = ""
